@@ -172,22 +172,98 @@ https://tudominio.xyz
 
 ---
 
-## 7. Mainnet — gate manual, mucho después
+## 7. Mainnet — paso a paso, gate manual
 
-**No lo ejecutes hasta que Sepolia lleve tiempo estable y hayas decidido conscientemente pasar a producción real.** Implica fondos reales de usuarios. Cuando llegue el momento:
+**No arranques esta sección hasta que Sepolia lleve tiempo estable y hayas decidido conscientemente pasar a producción real.** A partir de aquí GIVE/GIVEN tienen valor real para usuarios reales. Yo no ejecutaré ningún comando de esta sección sin que me lo pidas explícitamente en el momento — el `Makefile` incluso lo obliga con `CONFIRM_MAINNET=yes` para que no salga nunca de un copy-paste accidental del comando de Sepolia.
 
-1. **Nueva `FID_BINDER_KEY`** dedicada a mainnet (no reuses la de Sepolia — aísla el blast radius si una se compromete).
-2. **Verifica activación en mainnet** antes de nada:
-   ```bash
-   base-cast call 0x8453000000000000000000000000000000000001 \
-     "isActivated(bytes32)(bool)" $(base-cast keccak "base.b20_asset") \
-     --rpc-url https://mainnet.base.org
-   ```
-3. Añade un target `deploy-mainnet` al `Makefile` (no existe todavía, deliberadamente — créalo cuando estés listo) análogo a `deploy-sepolia` pero contra `$(MAINNET_RPC_URL)`.
-4. Revisa de nuevo si `SEIZE_HOLDER_POLICY` sigue sin soporte live (era el motivo por el que `DailyGive.sol` usa `approve`/`transferFrom` en vez de `seizeWithMemo`) — si para entonces ya está soportado en mainnet, hay una simplificación de UX pendiente (quitar el paso de approve).
-5. Despliega, verifica en BaseScan mainnet, repite los checks de la sección 2.5.
-6. Nuevo proyecto Vercel (o nuevas env vars) apuntando a `NEXT_PUBLIC_CHAIN_ID=8453` y las direcciones de mainnet — **no mezcles Sepolia y mainnet en el mismo deploy de la app**.
-7. Nueva verificación de dominio en Farcaster si usas un dominio distinto para producción, o re-verifica el mismo si cambia el `accountAssociation`.
-8. Repite pruebas end-to-end de la sección 5, esta vez con GIVE/GIVEN reales — considera un rollout gradual (whitelist de FIDs beta antes de abrir a todos).
+### 7.0 — Prerrequisitos específicos de mainnet
 
-Yo no ejecutaré ningún despliegue a mainnet sin que me lo pidas explícitamente en el momento, con la confirmación de que quieres proceder — por diseño, no por olvido.
+- [ ] ETH real en la wallet `speedrun` en Base mainnet (para gas — no testnet ETH).
+- [ ] Has decidido conscientemente: ¿mismo dominio que Sepolia, o uno nuevo para producción? (afecta 7.7 y 7.8).
+- [ ] Has revisado el código una última vez pensando en fondos reales — no hay red de seguridad después de este punto salvo lo que el propio contrato ya garantiza.
+
+### 7.1 — Nueva `FID_BINDER_KEY` dedicada a mainnet
+
+No reuses la clave de Sepolia — aísla el blast radius si una se compromete.
+
+```bash
+cast wallet new
+```
+
+Guarda dirección (→ `FID_BINDER_ADDRESS` para el deploy) y clave privada (→ env var `FID_BINDER_KEY` en el proyecto Vercel de producción, nunca en el repo).
+
+### 7.2 — Verifica activación en mainnet
+
+```bash
+cd contracts
+make check-activation-mainnet   # debe devolver "true"
+make check-keystore
+base-cast balance 0x8F058fE6b568D97f85d517Ac441b52B95722fDDe --rpc-url https://mainnet.base.org
+```
+
+### 7.3 — Revisa si `SEIZE_HOLDER_POLICY` ya está soportado en mainnet
+
+Era el motivo por el que `DailyGive.sol` usa `approve`/`transferFrom` en vez del `seizeWithMemo` que documentaba el spec de base-std (ver el comentario en `contracts/src/DailyGive.sol`). Si para este momento ya está soportado en mainnet, hay una simplificación de UX pendiente (quitar el paso de `approve` del flujo de claim/tip) — vale la pena hacerla antes de lanzar en producción, no después. Compruébalo así, contra un fork de mainnet, antes de decidir:
+
+```bash
+LIVE_PRECOMPILES=true base-forge test --fork-url https://mainnet.base.org --match-test test_bindFid_success -vvv
+```
+
+Si el error `UnsupportedPolicyType` ya no aparece para tokens ASSET, dímelo y rediseñamos esa parte antes de desplegar.
+
+### 7.4 — Deploy
+
+```bash
+FID_BINDER_ADDRESS=<dirección del paso 7.1> CONFIRM_MAINNET=yes make deploy-mainnet
+```
+
+Pide la password del keystore de forma interactiva, igual que Sepolia. Guarda las tres direcciones que imprime (`DailyGive`, `GIVE`, `GIVEN`).
+
+### 7.5 — Verifica en BaseScan mainnet
+
+```
+https://basescan.org/address/<DailyGive address>
+```
+
+### 7.6 — Sanity checks on-chain
+
+```bash
+base-cast call <DailyGive address> "fidBinder()(address)" --rpc-url https://mainnet.base.org
+# debe devolver la dirección del paso 7.1
+
+base-cast call <DailyGive address> "owner()(address)" --rpc-url https://mainnet.base.org
+# debe devolver 0x8F058fE6b568D97f85d517Ac441b52B95722fDDe
+```
+
+### 7.7 — Proyecto Vercel de producción
+
+**No mezcles Sepolia y mainnet en el mismo deploy de la app.** Crea un proyecto Vercel nuevo (o un Environment de producción separado con sus propias env vars si prefieres un solo proyecto) con:
+
+| Variable | Valor |
+|---|---|
+| `NEXT_PUBLIC_CHAIN_ID` | `8453` |
+| `NEXT_PUBLIC_DAILYGIVE_ADDRESS` / `GIVE` / `GIVEN` | direcciones del paso 7.4 |
+| `NEXT_PUBLIC_APP_URL` | tu dominio de producción (mismo o distinto al de Sepolia, según 7.0) |
+| `FID_BINDER_KEY` | clave del paso 7.1 |
+| Resto (`NEYNAR_*`, `UPSTASH_*`, `NOTIFY_SECRET`, `CRON_SECRET`) | nuevas o reutilizadas, tu decisión — no son chain-specific |
+| `FARCASTER_ACCOUNT_ASSOCIATION_*` | vacíos por ahora, paso 7.9 |
+
+Deploy con `npx vercel --prod` (desde el proyecto/environment correcto) y repite el `curl` del paso 3.5 contra el dominio de producción.
+
+### 7.8 — Dominio
+
+Si usas el mismo dominio que Sepolia: no hace falta comprar nada nuevo, solo asegúrate de que el proyecto Vercel de producción apunta a él (y que el de Sepolia deja de hacerlo, o usas un subdominio tipo `sepolia.tudominio.xyz` para no pisarte). Si usas uno nuevo para producción: cómpralo y configúralo igual que en el paso 3.3.
+
+### 7.9 — Verificación de dominio en Farcaster (de nuevo)
+
+Repite la sección 4 completa contra el dominio de producción. Un `accountAssociation` firmado para Sepolia/testnet no vale para el dominio de producción si es distinto.
+
+### 7.10 — Pruebas end-to-end con fondos reales
+
+Repite la sección 5, esta vez con GIVE/GIVEN reales de por medio. Considera:
+- Rollout gradual: whitelist de FIDs beta (tú y gente de confianza) antes de abrir a todos.
+- `claim()`/`tip()` los paga el gas cada usuario con su propia wallet, no `speedrun` — confirma esto probando con una wallet de prueba que no sea `speedrun`. `speedrun` solo gasta gas si vuelves a llamar una función admin (`rotateFidBinder`, etc.), así que no necesita un balance operativo grande post-deploy.
+
+### 7.11 — Anunciar producción
+
+Igual que la sección 6, pero deja claro en el cast que es la versión de producción en Base mainnet (no testnet), si antes anunciaste la de Sepolia a la misma audiencia.
