@@ -6,6 +6,7 @@ import { parseUnits, maxUint256, zeroHash } from "viem";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { dailyGiveAbi, b20Abi } from "@/lib/abi";
 import { DAILYGIVE_ADDRESS, GIVE_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 type ResolvedUser = { fid: number; username: string; displayName: string; pfpUrl: string };
 
@@ -119,7 +120,13 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
           </p>
           <button
             onClick={() =>
-              approve({ address: GIVE_ADDRESS, abi: b20Abi, functionName: "approve", args: [DAILYGIVE_ADDRESS, maxUint256] })
+              approve({
+                address: GIVE_ADDRESS,
+                abi: b20Abi,
+                functionName: "approve",
+                args: [DAILYGIVE_ADDRESS, maxUint256],
+                dataSuffix: BUILDER_CODE_DATA_SUFFIX,
+              })
             }
             disabled={approving}
             className="mt-2 w-full rounded-xl bg-white/10 py-3 font-medium hover:bg-white/20 disabled:opacity-50"
@@ -136,6 +143,7 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
               abi: dailyGiveAbi,
               functionName: "tip",
               args: [BigInt(resolved.fid), amountWei, castHash ?? zeroHash],
+              dataSuffix: BUILDER_CODE_DATA_SUFFIX,
             })
           }
           disabled={!resolved || tipping}

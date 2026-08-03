@@ -5,6 +5,7 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import { formatUnits, maxUint256 } from "viem";
 import { dailyGiveAbi, b20Abi } from "@/lib/abi";
 import { DAILYGIVE_ADDRESS, GIVE_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const DAY_SECONDS = 86400;
 
@@ -125,6 +126,7 @@ export function ClaimCard({ onClaimed }: { onClaimed?: () => void } = {}) {
                 abi: b20Abi,
                 functionName: "approve",
                 args: [DAILYGIVE_ADDRESS, maxUint256],
+                dataSuffix: BUILDER_CODE_DATA_SUFFIX,
               })
             }
             disabled={approving}
@@ -141,6 +143,7 @@ export function ClaimCard({ onClaimed }: { onClaimed?: () => void } = {}) {
                 address: DAILYGIVE_ADDRESS,
                 abi: dailyGiveAbi,
                 functionName: "claim",
+                dataSuffix: BUILDER_CODE_DATA_SUFFIX,
               })
             }
             disabled={claiming}

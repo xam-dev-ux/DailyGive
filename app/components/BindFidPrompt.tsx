@@ -5,6 +5,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadCont
 import { sdk } from "@farcaster/miniapp-sdk";
 import { dailyGiveAbi } from "@/lib/abi";
 import { DAILYGIVE_ADDRESS } from "@/lib/contracts";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 /// First-run identity binding: gets a Farcaster Quick Auth token from the SDK, has the server
 /// verify it and sign an EIP-712 attestation (see app/api/quickauth/route.ts), then submits
@@ -45,6 +46,7 @@ export function BindFidPrompt() {
         abi: dailyGiveAbi,
         functionName: "bindFid",
         args: [verifiedFid, signature],
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
       setStatus("idle");
     } catch (err) {
