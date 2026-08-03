@@ -67,13 +67,26 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
     if (approveConfirmed) refetchAllowance();
   }, [approveConfirmed, refetchAllowance]);
 
-  const { writeContract: tip, data: tipHash, isPending: tipping, error: tipError } = useWriteContract();
-  const { isSuccess: tipConfirmed } = useWaitForTransactionReceipt({ hash: tipHash });
+  const { writeContract: tip, data: tipHash, isPending: tipSubmitting, error: tipError } = useWriteContract();
+  const { isLoading: tipConfirming, isSuccess: tipConfirmed } = useWaitForTransactionReceipt({ hash: tipHash });
+
+  const [sentTip, setSentTip] = useState<{ username: string; amount: number } | null>(null);
+
+  useEffect(() => {
+    if (!tipConfirmed || !resolved) return;
+    const username = resolved.username;
+    const timeout = setTimeout(() => {
+      setSentTip({ username, amount });
+      setHandle("");
+      setResolved(null);
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, [tipConfirmed, resolved, amount]);
 
   async function shareTip() {
-    if (!resolved) return;
+    if (!sentTip) return;
     await sdk.actions.composeCast({
-      text: `I just tipped @${resolved.username} ${amount} GIVE via DailyGive`,
+      text: `I just tipped @${sentTip.username} ${sentTip.amount} GIVE via DailyGive`,
       embeds: [process.env.NEXT_PUBLIC_APP_URL ?? ""],
     });
   }
@@ -146,18 +159,36 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
               dataSuffix: BUILDER_CODE_DATA_SUFFIX,
             })
           }
-          disabled={!resolved || tipping}
+          disabled={!resolved || tipSubmitting || tipConfirming}
           className="mt-4 w-full rounded-xl bg-amber-400 py-3 font-semibold text-black hover:bg-amber-300 disabled:opacity-50"
         >
-          {tipping ? "Sending…" : "Send tip"}
+          {tipSubmitting ? "Confirm in wallet…" : tipConfirming ? "Confirming on-chain…" : "Send tip"}
         </button>
       )}
       {tipError && <p className="mt-2 text-xs text-red-400">{tipError.message}</p>}
 
-      {tipConfirmed && (
-        <button onClick={shareTip} className="mt-3 w-full rounded-xl border border-white/20 py-2 text-sm hover:bg-white/10">
-          Share this tip
-        </button>
+      {sentTip && (
+        <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-3 text-center">
+          <p className="text-sm text-emerald-300">
+            ✓ Sent {sentTip.amount} GIVE to @{sentTip.username}
+          </p>
+          {tipHash && (
+            <a
+              href={`https://basescan.org/tx/${tipHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 block text-xs text-white/40 underline hover:text-white/60"
+            >
+              View transaction
+            </a>
+          )}
+          <button
+            onClick={shareTip}
+            className="mt-3 w-full rounded-xl border border-white/20 py-2 text-sm hover:bg-white/10"
+          >
+            Share this tip
+          </button>
+        </div>
       )}
     </div>
   );

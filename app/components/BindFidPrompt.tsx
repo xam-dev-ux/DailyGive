@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { dailyGiveAbi } from "@/lib/abi";
@@ -16,7 +16,7 @@ export function BindFidPrompt() {
   const [status, setStatus] = useState<"idle" | "authenticating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { data: fid } = useReadContract({
+  const { data: fid, refetch: refetchFid } = useReadContract({
     address: DAILYGIVE_ADDRESS,
     abi: dailyGiveAbi,
     functionName: "fid",
@@ -26,6 +26,14 @@ export function BindFidPrompt() {
 
   const { writeContract: bindFid, data: bindHash, isPending: binding } = useWriteContract();
   const { isSuccess: bound } = useWaitForTransactionReceipt({ hash: bindHash });
+
+  // ClaimCard and page.tsx read this same `fid` query independently — same key, so refetching
+  // here updates their cache too. Without this, the bind confirms on-chain but the UI (Claim
+  // button, header) stays stale until something else happens to trigger a refetch (e.g.
+  // navigating away and back) — reported live, exactly that symptom.
+  useEffect(() => {
+    if (bound) refetchFid();
+  }, [bound, refetchFid]);
 
   async function handleBind() {
     if (!address) return;
