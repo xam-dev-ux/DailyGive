@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://dailygive.example";
 
-/// Embed metadata for the cast preview when this URL is shared. `fc:miniapp` is the current tag
-/// (miniapps.farcaster.xyz/docs/specification, confirmed in Phase 0 research); `fc:frame` is kept
-/// as a back-compat alias per spec. Both carry identical content.
+/// Embed metadata for the cast preview when this URL is shared. `fc:miniapp` is the only tag
+/// emitted — the official troubleshooting checklist explicitly lists `fc:frame` on a new
+/// implementation as a common agent mistake, so it's deliberately NOT included here.
 ///
 /// `imageUrl` must be 3:2 and 600x400-3000x2000px per spec — deliberately NOT the same asset as
 /// `splashImageUrl` below, which must be ~200x200 square. Conflating the two was a bug caught by
@@ -42,7 +42,6 @@ export const metadata: Metadata = {
   description: "Claim 100 GIVE daily, tip any Farcaster user. Received tips become permanent GIVEN reputation.",
   other: {
     "fc:miniapp": embed,
-    "fc:frame": embed,
   },
 };
 
