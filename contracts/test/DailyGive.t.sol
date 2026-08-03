@@ -22,6 +22,7 @@ contract DailyGiveTest is BaseTest {
     IB20 internal give;
     IB20 internal given;
     address internal fidBinderAddr;
+    address internal carol = makeAddr("carol");
 
     function setUp() public override {
         super.setUp();
@@ -106,6 +107,38 @@ contract DailyGiveTest is BaseTest {
         dailyGive.bindFid(100, sig);
     }
 
+    /// @notice A fid lazy-bound by a tip (see tip() tests) is NOT self-attested, so the real
+    ///         owner must be able to correct it via bindFid even though wallet[fid_] is already
+    ///         set to someone else's guess.
+    function test_bindFid_success_correctsLazyBoundWallet() public {
+        _bind(alice, 100);
+        _approveMax(alice);
+        vm.prank(alice);
+        dailyGive.claim();
+
+        // alice tips fid 200, guessing (wrongly) that carol holds it.
+        vm.prank(alice);
+        dailyGive.tip(200, carol, 1e6, bytes32(0));
+        assertEq(dailyGive.wallet(200), carol, "lazy-bind must set the guessed wallet");
+        assertFalse(dailyGive.fidSelfBound(200), "lazy-bind must not be self-attested");
+
+        // bob is the REAL owner of fid 200 and corrects it.
+        _bind(bob, 200);
+        assertEq(dailyGive.wallet(200), bob, "self-bind must override a prior lazy-bind");
+        assertTrue(dailyGive.fidSelfBound(200), "bindFid must mark the fid as self-attested");
+    }
+
+    /// @notice Once a fid has gone through real self-attestation, it's no longer just "a
+    ///         sender's best guess" — a second bindFid claiming the same fid for a different
+    ///         wallet must still revert, same as before self-bind existed for this fid.
+    function test_bindFid_revert_cannotOverrideSelfBoundFid() public {
+        _bind(alice, 100);
+        bytes memory sig = _signBinding(FID_BINDER_PK, bob, 100);
+        vm.prank(bob);
+        vm.expectRevert(DailyGive.FidBoundToDifferentWallet.selector);
+        dailyGive.bindFid(100, sig);
+    }
+
     function test_bindFid_revert_walletAlreadyBoundToDifferentFid() public {
         _bind(alice, 100);
         bytes memory sig = _signBinding(FID_BINDER_PK, alice, 200);
@@ -166,7 +199,7 @@ contract DailyGiveTest is BaseTest {
         // alice spends half her allowance tipping bob, keeping half unspent.
         uint256 halfAllowance = dailyGive.DAILY_ALLOWANCE() / 2;
         vm.prank(alice);
-        dailyGive.tip(200, halfAllowance, bytes32(0));
+        dailyGive.tip(200, bob, halfAllowance, bytes32(0));
 
         vm.warp(block.timestamp + dailyGive.DAY());
         vm.prank(alice);
@@ -187,17 +220,53 @@ contract DailyGiveTest is BaseTest {
         _bind(bob, 200);
         vm.prank(alice);
         vm.expectRevert(DailyGive.NotBoundToFid.selector);
-        dailyGive.tip(200, 1, bytes32(0));
+        dailyGive.tip(200, bob, 1, bytes32(0));
     }
 
-    function test_tip_revert_recipientUnknown() public {
+    /// @notice The recipient does NOT need to have called bindFid — receiving a tip lazy-binds
+    ///         wallet[toFid] to the caller-supplied address. This is the fix for the reported
+    ///         "transaction would fail" when tipping anyone who hadn't opened the app yet.
+    function test_tip_success_lazyBindsNeverBoundRecipient() public {
+        _bind(alice, 100);
+        _approveMax(alice);
+        vm.prank(alice);
+        dailyGive.claim();
+
+        assertEq(dailyGive.wallet(999), address(0), "fid 999 must start unbound");
+
+        vm.prank(alice);
+        dailyGive.tip(999, carol, 1e6, bytes32(0));
+
+        assertEq(dailyGive.wallet(999), carol, "first tip must lazy-bind the fid to the supplied wallet");
+        assertFalse(dailyGive.fidSelfBound(999), "lazy-bind must not count as self-attestation");
+        assertEq(given.balanceOf(carol), 1e6, "GIVEN must mint to the lazy-bound wallet");
+    }
+
+    function test_tip_revert_toWalletZero() public {
         _bind(alice, 100);
         vm.prank(alice);
         dailyGive.claim();
 
         vm.prank(alice);
         vm.expectRevert(DailyGive.UnknownRecipient.selector);
-        dailyGive.tip(999, 1, bytes32(0));
+        dailyGive.tip(999, address(0), 1, bytes32(0));
+    }
+
+    /// @notice Once a fid is bound (lazily or via bindFid) to some wallet, a later tip claiming a
+    ///         DIFFERENT wallet for the same fid must revert rather than silently redirecting
+    ///         that fid's accumulated reputation to a new address.
+    function test_tip_revert_conflictingWalletForAlreadyLazyBoundFid() public {
+        _bind(alice, 100);
+        _approveMax(alice);
+        vm.prank(alice);
+        dailyGive.claim();
+
+        vm.prank(alice);
+        dailyGive.tip(999, carol, 1e6, bytes32(0));
+
+        vm.prank(alice);
+        vm.expectRevert(DailyGive.FidBoundToDifferentWallet.selector);
+        dailyGive.tip(999, bob, 1e6, bytes32(0));
     }
 
     function test_tip_revert_exceedsMax() public {
@@ -209,7 +278,7 @@ contract DailyGiveTest is BaseTest {
         uint256 tooMuch = dailyGive.MAX_TIP() + 1;
         vm.prank(alice);
         vm.expectRevert(DailyGive.TipExceedsMax.selector);
-        dailyGive.tip(200, tooMuch, bytes32(0));
+        dailyGive.tip(200, bob, tooMuch, bytes32(0));
     }
 
     function test_tip_revert_insufficientBalance() public {
@@ -218,7 +287,7 @@ contract DailyGiveTest is BaseTest {
         // alice never claimed, so she holds zero GIVE.
         vm.prank(alice);
         vm.expectRevert();
-        dailyGive.tip(200, 1, bytes32(0));
+        dailyGive.tip(200, bob, 1, bytes32(0));
     }
 
     function test_tip_success_burnsGiveAndMintsGivenWithMemo() public {
@@ -235,7 +304,7 @@ contract DailyGiveTest is BaseTest {
         emit DailyGive.Tipped(100, 200, amount, castHash);
 
         vm.prank(alice);
-        dailyGive.tip(200, amount, castHash);
+        dailyGive.tip(200, bob, amount, castHash);
 
         assertEq(give.balanceOf(alice), dailyGive.DAILY_ALLOWANCE() - amount, "tip must burn GIVE from sender");
         assertEq(given.balanceOf(bob), amount, "tip must mint GIVEN to recipient");
@@ -253,7 +322,7 @@ contract DailyGiveTest is BaseTest {
 
         vm.recordLogs();
         vm.prank(alice);
-        dailyGive.tip(200, amount, castHash);
+        dailyGive.tip(200, bob, amount, castHash);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bool sawMemo;
@@ -280,7 +349,7 @@ contract DailyGiveTest is BaseTest {
         vm.prank(alice);
         dailyGive.claim();
         vm.prank(alice);
-        dailyGive.tip(200, 10e6, bytes32(0));
+        dailyGive.tip(200, bob, 10e6, bytes32(0));
 
         vm.prank(bob);
         vm.expectRevert();
@@ -344,7 +413,7 @@ contract DailyGiveTest is BaseTest {
             if (remaining == 0) break;
             uint256 amount = bound(uint256(keccak256(abi.encode(seed, i))), 1, remaining);
             vm.prank(alice);
-            dailyGive.tip(200, amount, bytes32(0));
+            dailyGive.tip(200, bob, amount, bytes32(0));
             remaining -= amount;
             totalTipped += amount;
         }

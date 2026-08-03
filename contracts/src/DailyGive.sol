@@ -50,6 +50,12 @@ contract DailyGive is EIP712 {
     mapping(address => uint64) public fid; // wallet -> fid
     mapping(address => uint256) public lastClaim;
 
+    /// @dev True once `fid_` has gone through the real `bindFid` self-attestation path. A `tip()`
+    ///      lazy-bind (see there) never sets this — it's the line between "the real owner proved
+    ///      it" and "a sender's best guess," and it's what stops a compromised `fidBinder` key
+    ///      from being used to hijack a fid that's already been properly self-bound.
+    mapping(uint64 => bool) public fidSelfBound;
+
     event Claimed(uint64 indexed fromFid, address indexed wallet, uint256 day);
     event Tipped(uint64 indexed fromFid, uint64 indexed toFid, uint256 amount, bytes32 castHash);
     event FidBound(uint64 indexed fid, address indexed walletAddr);
@@ -94,12 +100,19 @@ contract DailyGive is EIP712 {
 
     /// @notice Binds `fid_` to `msg.sender`, authorized by an EIP-712 signature from `fidBinder`
     ///         attesting the binding was verified off-chain (Farcaster Quick Auth). Idempotent for
-    ///         a wallet re-binding its own fid; reverts if either side is already bound elsewhere.
+    ///         a wallet re-binding its own fid.
+    ///
+    /// @dev Self-sovereign binding is authoritative: unlike `tip()`'s lazy-bind (see there), this
+    ///      is allowed to overwrite an existing `wallet[fid_]` set by a prior lazy-bind, since a
+    ///      Quick-Auth-backed signature from the real owner is strictly stronger proof than "someone
+    ///      tipped this address once." It still cannot steal a fid away from another wallet that
+    ///      itself self-bound via this same function — that case is a real conflict, not a
+    ///      correction, and reverts.
     function bindFid(uint64 fid_, bytes calldata binderSignature) external {
         if (fid_ == 0) revert InvalidFid();
 
         address existingWallet = wallet[fid_];
-        if (existingWallet != address(0) && existingWallet != msg.sender) revert FidBoundToDifferentWallet();
+        if (fidSelfBound[fid_] && existingWallet != msg.sender) revert FidBoundToDifferentWallet();
 
         uint64 existingFid = fid[msg.sender];
         if (existingFid != 0 && existingFid != fid_) revert WalletBoundToDifferentFid();
@@ -109,6 +122,7 @@ contract DailyGive is EIP712 {
         if (signer != fidBinder) revert InvalidBinderSignature();
 
         wallet[fid_] = msg.sender;
+        fidSelfBound[fid_] = true;
         fid[msg.sender] = fid_;
         emit FidBound(fid_, msg.sender);
     }
@@ -137,20 +151,36 @@ contract DailyGive is EIP712 {
         emit Claimed(f, msg.sender, today);
     }
 
-    /// @notice Tips `amount` of the caller's GIVE to the wallet bound to `toFid`. The GIVE is
-    ///         pulled from the caller (requires a prior GIVE allowance to this contract) and
-    ///         burned; an equal amount of GIVEN is minted to the recipient, memo'd with `castHash`
-    ///         so the reputation mint is auditable per-post.
-    function tip(uint64 toFid, uint256 amount, bytes32 castHash) external {
+    /// @notice Tips `amount` of the caller's GIVE to `toFid`, at `toWallet`. The GIVE is pulled
+    ///         from the caller (requires a prior GIVE allowance to this contract) and burned; an
+    ///         equal amount of GIVEN is minted to `toWallet`, memo'd with `castHash` so the
+    ///         reputation mint is auditable per-post.
+    ///
+    /// @dev `toFid` need not have called `bindFid` yet — receiving a tip doesn't require the
+    ///      recipient to have ever opened the app, only sending/claiming does. The first tip to a
+    ///      never-bound fid lazy-binds `wallet[toFid] = toWallet` (the caller/frontend is expected
+    ///      to supply the fid's Farcaster-verified address, e.g. resolved via Neynar); every
+    ///      subsequent tip to that fid must match the address already on file, whether it was set
+    ///      by a lazy-bind or by the recipient's own `bindFid` — otherwise this would let a sender
+    ///      redirect someone else's accumulated reputation just by claiming a different address.
+    ///      The real owner can still correct a wrong lazy-bind via `bindFid`, which is
+    ///      authoritative over this lazy path (see its NatSpec).
+    function tip(uint64 toFid, address toWallet, uint256 amount, bytes32 castHash) external {
         uint64 from = fid[msg.sender];
         if (from == 0) revert NotBoundToFid();
         if (amount > MAX_TIP) revert TipExceedsMax();
-        address to = wallet[toFid];
-        if (to == address(0)) revert UnknownRecipient();
+        if (toWallet == address(0)) revert UnknownRecipient();
+
+        address existingWallet = wallet[toFid];
+        if (existingWallet == address(0)) {
+            wallet[toFid] = toWallet;
+        } else if (existingWallet != toWallet) {
+            revert FidBoundToDifferentWallet();
+        }
 
         GIVE.transferFrom(msg.sender, address(this), amount);
         GIVE.burn(amount);
-        GIVEN.mintWithMemo(to, amount, castHash);
+        GIVEN.mintWithMemo(toWallet, amount, castHash);
 
         emit Tipped(from, toFid, amount, castHash);
     }

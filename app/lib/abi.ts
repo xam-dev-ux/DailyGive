@@ -95,6 +95,7 @@ export const dailyGiveAbi = [
     name: "tip",
     inputs: [
       { name: "toFid", type: "uint64", internalType: "uint64" },
+      { name: "toWallet", type: "address", internalType: "address" },
       { name: "amount", type: "uint256", internalType: "uint256" },
       { name: "castHash", type: "bytes32", internalType: "bytes32" },
     ],
@@ -106,6 +107,13 @@ export const dailyGiveAbi = [
     name: "wallet",
     inputs: [{ name: "", type: "uint64", internalType: "uint64" }],
     outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "fidSelfBound",
+    inputs: [{ name: "", type: "uint64", internalType: "uint64" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
     stateMutability: "view",
   },
   {

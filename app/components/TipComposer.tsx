@@ -8,7 +8,7 @@ import { dailyGiveAbi, b20Abi } from "@/lib/abi";
 import { DAILYGIVE_ADDRESS, GIVE_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
 import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
-type ResolvedUser = { fid: number; username: string; displayName: string; pfpUrl: string };
+type ResolvedUser = { fid: number; username: string; displayName: string; pfpUrl: string; verifiedAddresses: string[] };
 
 export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
   const { address, isConnected } = useAccount();
@@ -25,6 +25,15 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
   const [resolved, setResolved] = useState<ResolvedUser | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [amount, setAmount] = useState(10);
+
+  // tip() no longer requires the recipient to have opened DailyGive: the contract accepts a
+  // wallet address alongside the fid and lazy-binds it on the first tip (see DailyGive.sol's
+  // tip() NatSpec). We resolve that address from Farcaster's own verified-addresses list via
+  // Neynar (/api/resolve), so the recipient never has to do anything to receive a tip — this is
+  // the actual fix for "transaction would fail" when tipping anyone who hadn't onboarded yet;
+  // an earlier pass here just blocked the attempt with a nicer message instead of fixing it.
+  const recipientWallet = resolved?.verifiedAddresses[0] as `0x${string}` | undefined;
+  const recipientHasNoVerifiedAddress = Boolean(resolved && !recipientWallet);
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: GIVE_ADDRESS,
@@ -103,9 +112,15 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
         className="mt-1 w-full rounded-lg bg-black/30 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-amber-400"
       />
       {resolveError && <p className="mt-1 text-xs text-red-400">{resolveError}</p>}
-      {resolved && (
+      {resolved && !recipientHasNoVerifiedAddress && (
         <p className="mt-1 text-xs text-emerald-400">
           {resolved.displayName} (fid {resolved.fid})
+        </p>
+      )}
+      {recipientHasNoVerifiedAddress && (
+        <p className="mt-1 text-xs text-amber-300">
+          {resolved!.displayName} hasn&rsquo;t verified a wallet with Farcaster yet, so there&rsquo;s nowhere to send
+          their reputation. Ask them to add one in Warpcast settings.
         </p>
       )}
 
@@ -119,7 +134,7 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
         className="mt-1 w-full"
       />
 
-      {resolved && !needsApproval && (
+      {resolved && !needsApproval && !recipientHasNoVerifiedAddress && (
         <p className="mt-3 text-xs text-white/50">
           You&rsquo;ll burn {amount} GIVE. <span className="text-amber-300">@{resolved.username}</span> receives{" "}
           {amount} GIVEN, permanently — it can&rsquo;t be transferred or taken back.
@@ -151,15 +166,16 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
         <button
           onClick={() =>
             resolved &&
+            recipientWallet &&
             tip({
               address: DAILYGIVE_ADDRESS,
               abi: dailyGiveAbi,
               functionName: "tip",
-              args: [BigInt(resolved.fid), amountWei, castHash ?? zeroHash],
+              args: [BigInt(resolved.fid), recipientWallet, amountWei, castHash ?? zeroHash],
               dataSuffix: BUILDER_CODE_DATA_SUFFIX,
             })
           }
-          disabled={!resolved || tipSubmitting || tipConfirming}
+          disabled={!resolved || !recipientWallet || tipSubmitting || tipConfirming}
           className="mt-4 w-full rounded-xl bg-amber-400 py-3 font-semibold text-black hover:bg-amber-300 disabled:opacity-50"
         >
           {tipSubmitting ? "Confirm in wallet…" : tipConfirming ? "Confirming on-chain…" : "Send tip"}
