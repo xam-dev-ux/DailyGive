@@ -24,7 +24,7 @@ function formatCountdown(now: number) {
   return `${hours}h ${minutes}m`;
 }
 
-export function ClaimCard() {
+export function ClaimCard({ onClaimed }: { onClaimed?: () => void } = {}) {
   const { address, isConnected } = useAccount();
   const now = useNow();
   const countdown = useMemo(() => formatCountdown(now), [now]);
@@ -80,8 +80,11 @@ export function ClaimCard() {
   }, [approveConfirmed, refetchAllowance]);
 
   useEffect(() => {
-    if (claimConfirmed) refetchLastClaim();
-  }, [claimConfirmed, refetchLastClaim]);
+    if (claimConfirmed) {
+      refetchLastClaim();
+      onClaimed?.();
+    }
+  }, [claimConfirmed, refetchLastClaim, onClaimed]);
 
   if (!isConnected) {
     return (

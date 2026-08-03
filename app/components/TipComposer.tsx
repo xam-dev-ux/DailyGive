@@ -10,7 +10,16 @@ import { DAILYGIVE_ADDRESS, GIVE_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts"
 type ResolvedUser = { fid: number; username: string; displayName: string; pfpUrl: string };
 
 export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
+
+  const { data: fid } = useReadContract({
+    address: DAILYGIVE_ADDRESS,
+    abi: dailyGiveAbi,
+    functionName: "fid",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
   const [handle, setHandle] = useState("");
   const [resolved, setResolved] = useState<ResolvedUser | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -68,6 +77,8 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
     });
   }
 
+  if (!isConnected || !fid) return null;
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
       <label className="text-xs uppercase tracking-wide text-white/40">Recipient</label>
@@ -94,16 +105,28 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
         className="mt-1 w-full"
       />
 
+      {resolved && !needsApproval && (
+        <p className="mt-3 text-xs text-white/50">
+          You&rsquo;ll burn {amount} GIVE. <span className="text-amber-300">@{resolved.username}</span> receives{" "}
+          {amount} GIVEN, permanently — it can&rsquo;t be transferred or taken back.
+        </p>
+      )}
+
       {needsApproval ? (
-        <button
-          onClick={() =>
-            approve({ address: GIVE_ADDRESS, abi: b20Abi, functionName: "approve", args: [DAILYGIVE_ADDRESS, maxUint256] })
-          }
-          disabled={approving}
-          className="mt-4 w-full rounded-xl bg-white/10 py-3 font-medium hover:bg-white/20 disabled:opacity-50"
-        >
-          {approving ? "Approving…" : "Approve GIVE"}
-        </button>
+        <>
+          <p className="mt-4 text-xs text-white/50">
+            One-time approval so DailyGive can move your GIVE when you tip — you&rsquo;ll only see this once.
+          </p>
+          <button
+            onClick={() =>
+              approve({ address: GIVE_ADDRESS, abi: b20Abi, functionName: "approve", args: [DAILYGIVE_ADDRESS, maxUint256] })
+            }
+            disabled={approving}
+            className="mt-2 w-full rounded-xl bg-white/10 py-3 font-medium hover:bg-white/20 disabled:opacity-50"
+          >
+            {approving ? "Approving…" : "Approve GIVE"}
+          </button>
+        </>
       ) : (
         <button
           onClick={() =>

@@ -35,6 +35,13 @@ export default function Home() {
     })();
   }, []);
 
+  // Prompt the client's own "add this mini app" UI right after the moment a user is most
+  // bought-in (their first successful claim) rather than making them hunt for it in a menu.
+  // Safe to call repeatedly: rejects quietly if the user declines or it's already added.
+  function handleFirstClaim() {
+    sdk.actions.addMiniApp().catch(() => {});
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 p-4 pb-24 text-white">
       <header className="flex items-center justify-between">
@@ -43,6 +50,16 @@ export default function Home() {
         </div>
         <ReputationBadge address={address} />
       </header>
+
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
+        <p>
+          <span className="font-semibold text-amber-300">DailyGive</span> gives you 100{" "}
+          <span className="font-medium text-white">GIVE</span> every day — spend it or lose it. Tip it to anyone on
+          Farcaster; what they receive becomes permanent{" "}
+          <span className="font-medium text-amber-300">GIVEN</span> reputation that can never be taken away or
+          transferred.
+        </p>
+      </section>
 
       {!isConnected && connectors[0] && (
         <button
@@ -54,7 +71,7 @@ export default function Home() {
       )}
 
       <BindFidPrompt />
-      <ClaimCard />
+      <ClaimCard onClaimed={handleFirstClaim} />
       <TipComposer castHash={castHash} />
 
       <section>
