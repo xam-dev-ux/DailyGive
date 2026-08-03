@@ -59,6 +59,10 @@ export default function Home() {
           <span className="font-medium text-amber-300">GIVEN</span> reputation that can never be taken away or
           transferred.
         </p>
+        <p className="mt-2 text-xs text-white/40">
+          Native <span className="text-white/60">B20</span> tokens on <span className="text-white/60">Base</span> —
+          every claim and tip settles onchain in seconds, for cents.
+        </p>
       </section>
 
       {!isConnected && connectors[0] && (
@@ -79,12 +83,18 @@ export default function Home() {
         <Feed fid={fid} />
       </section>
 
-      <footer className="mt-auto flex justify-center gap-6 border-t border-white/10 pt-4 text-sm text-white/60">
-        <Link href="/leaderboard" className="hover:text-white">
-          Leaderboard
+      <footer className="mt-auto flex justify-center gap-3 border-t border-white/10 pt-4 text-sm">
+        <Link
+          href="/leaderboard"
+          className="rounded-full border border-white/20 px-4 py-2 text-white/70 hover:border-amber-400/50 hover:text-amber-300"
+        >
+          🏆 Leaderboard
         </Link>
         {fid && (
-          <Link href={`/${fid.toString()}`} className="hover:text-white">
+          <Link
+            href={`/${fid.toString()}`}
+            className="rounded-full border border-white/20 px-4 py-2 text-white/70 hover:border-amber-400/50 hover:text-amber-300"
+          >
             Your reputation
           </Link>
         )}
