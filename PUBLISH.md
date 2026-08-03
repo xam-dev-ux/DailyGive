@@ -182,15 +182,18 @@ https://tudominio.xyz
 - [ ] Has decidido conscientemente: ¿mismo dominio que Sepolia, o uno nuevo para producción? (afecta 7.7 y 7.8).
 - [ ] Has revisado el código una última vez pensando en fondos reales — no hay red de seguridad después de este punto salvo lo que el propio contrato ya garantiza.
 
-### 7.1 — Nueva `FID_BINDER_KEY` dedicada a mainnet
+### 7.1 — `FID_BINDER_KEY`: misma wallet que Sepolia
 
-No reuses la clave de Sepolia — aísla el blast radius si una se compromete.
+Decisión tomada: se reutiliza la misma wallet `FID_BINDER` que en Sepolia (`0x1755e929D8FA78D931096df8BF68E2a295f64E29`), en vez de generar una nueva para mainnet.
 
-```bash
-cast wallet new
+Es seguro reutilizarla porque la firma EIP-712 que firma (`bindFid`) incluye `chainId` y la dirección del contrato en el domain separator — una firma válida en Sepolia no es válida en mainnet aunque la clave sea la misma, así que no hay riesgo de replay entre redes. El único trade-off real: si esa clave privada se filtrara, comprometería el binding fid↔wallet en **ambas** redes a la vez en vez de solo una (recuerda: no puede mintear ni mover fondos, solo autorizar bindings — ver `owner()`/`rotateFidBinder` en `DailyGive.sol`). Si en algún momento quieres aislarlo, `rotateFidBinder` permite cambiar la clave por red sin redesplegar el contrato.
+
+`FID_BINDER_ADDRESS` para el deploy de mainnet:
+```
+0x1755e929D8FA78D931096df8BF68E2a295f64E29
 ```
 
-Guarda dirección (→ `FID_BINDER_ADDRESS` para el deploy) y clave privada (→ env var `FID_BINDER_KEY` en el proyecto Vercel de producción, nunca en el repo).
+La clave privada correspondiente va en `FID_BINDER_KEY` del proyecto Vercel de producción — ya la tienes en `app/.env` de la sesión de Sepolia, reutilízala ahí también.
 
 ### 7.2 — Verifica activación en mainnet
 
@@ -203,67 +206,127 @@ base-cast balance 0x8F058fE6b568D97f85d517Ac441b52B95722fDDe --rpc-url https://m
 
 ### 7.3 — Revisa si `SEIZE_HOLDER_POLICY` ya está soportado en mainnet
 
-Era el motivo por el que `DailyGive.sol` usa `approve`/`transferFrom` en vez del `seizeWithMemo` que documentaba el spec de base-std (ver el comentario en `contracts/src/DailyGive.sol`). Si para este momento ya está soportado en mainnet, hay una simplificación de UX pendiente (quitar el paso de `approve` del flujo de claim/tip) — vale la pena hacerla antes de lanzar en producción, no después. Compruébalo así, contra un fork de mainnet, antes de decidir:
+Era el motivo por el que `DailyGive.sol` usa `approve`/`transferFrom` en vez del `seizeWithMemo` que documentaba el spec de base-std (ver el comentario en `contracts/src/DailyGive.sol`). Si para este momento ya está soportado, hay una simplificación de UX pendiente (quitar el paso de `approve` del flujo de claim/tip) — vale la pena hacerla antes de lanzar, no después.
+
+`test_bindFid_success` NO sirve para comprobar esto — `DailyGive.sol` ya no toca ese policy scope, así que ningún test normal lo ejercita. Hay una sonda dedicada para esto: `contracts/test/probes/SeizeHolderPolicySupport.t.sol`.
 
 ```bash
-LIVE_PRECOMPILES=true base-forge test --fork-url https://mainnet.base.org --match-test test_bindFid_success -vvv
+cd contracts
+LIVE_PRECOMPILES=true base-forge test --fork-url https://mainnet.base.org --match-test test_probe_seizeHolderPolicySupported -vv
 ```
 
-Si el error `UnsupportedPolicyType` ya no aparece para tokens ASSET, dímelo y rediseñamos esa parte antes de desplegar.
+- **FAIL** (`UnsupportedPolicyType`) → sigue sin soporte, no hay nada que hacer, continúa al paso 7.4 tal cual.
+- **PASS** → ya está soportado. Dímelo antes de seguir — rediseñamos `claim()`/`tip()` para usar `seizeWithMemo` y quitamos el paso de `approve` de la UI antes de desplegar, no después.
 
 ### 7.4 — Deploy
 
 ```bash
-FID_BINDER_ADDRESS=<dirección del paso 7.1> CONFIRM_MAINNET=yes make deploy-mainnet
+cd contracts
+FID_BINDER_ADDRESS=0x1755e929D8FA78D931096df8BF68E2a295f64E29 CONFIRM_MAINNET=yes make deploy-mainnet
 ```
 
-Pide la password del keystore de forma interactiva, igual que Sepolia. Guarda las tres direcciones que imprime (`DailyGive`, `GIVE`, `GIVEN`).
+Pide la password del keystore de forma interactiva, igual que Sepolia. Al terminar, copia las tres direcciones que imprime y expórtalas — el resto de la guía las reutiliza así:
+
+```bash
+export DAILYGIVE_ADDRESS=<pega la dirección "DailyGive" impresa arriba>
+export GIVE_ADDRESS=<pega la dirección "GIVE" impresa arriba>
+export GIVEN_ADDRESS=<pega la dirección "GIVEN" impresa arriba>
+```
 
 ### 7.5 — Verifica en BaseScan mainnet
 
-```
-https://basescan.org/address/<DailyGive address>
+```bash
+echo "https://basescan.org/address/$DAILYGIVE_ADDRESS"
 ```
 
 ### 7.6 — Sanity checks on-chain
 
 ```bash
-base-cast call <DailyGive address> "fidBinder()(address)" --rpc-url https://mainnet.base.org
-# debe devolver la dirección del paso 7.1
+base-cast call $DAILYGIVE_ADDRESS "fidBinder()(address)" --rpc-url https://mainnet.base.org
+# debe devolver 0x1755e929D8FA78D931096df8BF68E2a295f64E29 (paso 7.1)
 
-base-cast call <DailyGive address> "owner()(address)" --rpc-url https://mainnet.base.org
-# debe devolver 0x8F058fE6b568D97f85d517Ac441b52B95722fDDe
+base-cast call $DAILYGIVE_ADDRESS "owner()(address)" --rpc-url https://mainnet.base.org
+# debe devolver 0x8F058fE6b568D97f85d517Ac441b52B95722fDDe (wallet speedrun)
 ```
 
 ### 7.7 — Proyecto Vercel de producción
 
-**No mezcles Sepolia y mainnet en el mismo deploy de la app.** Crea un proyecto Vercel nuevo (o un Environment de producción separado con sus propias env vars si prefieres un solo proyecto) con:
+**No mezcles Sepolia y mainnet en el mismo deploy de la app** — mismo patrón que usamos para Sepolia (`vercel link` + `vercel env add` + `vercel --prod`), pero contra un proyecto Vercel nuevo. Ejecuta esto desde la **raíz del repo** (no desde `app/` — el proyecto tiene `Root Directory: app` configurado en Vercel, y correr el link/deploy ya dentro de `app/` duplica la ruta y rompe el build; ya nos pasó una vez con Sepolia).
 
-| Variable | Valor |
-|---|---|
-| `NEXT_PUBLIC_CHAIN_ID` | `8453` |
-| `NEXT_PUBLIC_DAILYGIVE_ADDRESS` / `GIVE` / `GIVEN` | direcciones del paso 7.4 |
-| `NEXT_PUBLIC_APP_URL` | tu dominio de producción (mismo o distinto al de Sepolia, según 7.0) |
-| `FID_BINDER_KEY` | clave del paso 7.1 |
-| Resto (`NEYNAR_*`, `UPSTASH_*`, `NOTIFY_SECRET`, `CRON_SECRET`) | nuevas o reutilizadas, tu decisión — no son chain-specific |
-| `FARCASTER_ACCOUNT_ASSOCIATION_*` | vacíos por ahora, paso 7.9 |
+```bash
+cd /home/xabier/basedev/DailyGive
+rm -rf .vercel
+npx vercel link --yes --scope xabiers-projects-c5a11aae --project daily-give-mainnet
+```
 
-Deploy con `npx vercel --prod` (desde el proyecto/environment correcto) y repite el `curl` del paso 3.5 contra el dominio de producción.
+(Si el proyecto `daily-give-mainnet` no existe todavía, `vercel link` te ofrece crearlo — acepta, y confirma que su `Root Directory` queda en `app` igual que el de Sepolia, Project → Settings → General.)
+
+Define el dominio de producción antes de seguir (ver 7.8) y luego carga las env vars:
+
+```bash
+export PROD_APP_URL="https://tudominio-de-produccion"   # rellena según 7.8
+
+echo "8453" | npx vercel env add NEXT_PUBLIC_CHAIN_ID production
+echo "$DAILYGIVE_ADDRESS" | npx vercel env add NEXT_PUBLIC_DAILYGIVE_ADDRESS production
+echo "$GIVE_ADDRESS" | npx vercel env add NEXT_PUBLIC_GIVE_ADDRESS production
+echo "$GIVEN_ADDRESS" | npx vercel env add NEXT_PUBLIC_GIVEN_ADDRESS production
+echo "$PROD_APP_URL" | npx vercel env add NEXT_PUBLIC_APP_URL production
+echo "0x93a2896d6b383bc178f8398182675bc62c7e23e228881704c1f745cd561a52df" | npx vercel env add FID_BINDER_KEY production
+echo "4540124E-42BB-42D3-9352-5D872E14EE63" | npx vercel env add NEYNAR_API_KEY production
+echo "205a88c8-3bf8-4816-8182-1b39817cd92e" | npx vercel env add NEYNAR_CLIENT_ID production
+npx vercel env add NOTIFY_SECRET production <<< "$(openssl rand -hex 32)"
+npx vercel env add CRON_SECRET production <<< "$(openssl rand -hex 32)"
+```
+
+`UPSTASH_REDIS_REST_URL`/`TOKEN` y `FARCASTER_ACCOUNT_ASSOCIATION_*` no van aquí todavía — el primero se añade solo al conectar la integración de Redis (Project → Storage → Marketplace → Upstash, igual que en 3.2), el segundo en el paso 7.9. Cuando los tengas, mismo patrón: `echo "<valor>" | npx vercel env add <NOMBRE> production`.
+
+Deploy:
+
+```bash
+cd /home/xabier/basedev/DailyGive
+npx vercel --prod --yes
+```
+
+Verifica:
+
+```bash
+curl -s "$PROD_APP_URL/.well-known/farcaster.json" | python3 -m json.tool
+```
 
 ### 7.8 — Dominio
 
-Si usas el mismo dominio que Sepolia: no hace falta comprar nada nuevo, solo asegúrate de que el proyecto Vercel de producción apunta a él (y que el de Sepolia deja de hacerlo, o usas un subdominio tipo `sepolia.tudominio.xyz` para no pisarte). Si usas uno nuevo para producción: cómpralo y configúralo igual que en el paso 3.3.
+Antes de ejecutar el bloque de env vars de 7.7, decide `$PROD_APP_URL`:
+
+- **Mismo dominio que Sepolia**: no compres nada. Pero entonces el proyecto de Sepolia deja de poder usarlo (un dominio solo apunta a un proyecto Vercel a la vez) — o mueves Sepolia a un subdominio (`sepolia.tudominio.xyz`) antes de reasignar el dominio raíz a producción.
+- **Dominio nuevo para producción**: cómpralo, y en el proyecto `daily-give-mainnet` → Settings → Domains → añádelo, sigue las instrucciones DNS del registrador (igual que el paso 3.3).
 
 ### 7.9 — Verificación de dominio en Farcaster (de nuevo)
 
-Repite la sección 4 completa contra el dominio de producción. Un `accountAssociation` firmado para Sepolia/testnet no vale para el dominio de producción si es distinto.
+Manual, no scriptable — repite la sección 4 completa contra `$PROD_APP_URL`. Un `accountAssociation` firmado para el dominio de Sepolia no vale para uno de producción si son distintos.
+
+1. `https://warpcast.com/~/developers/mini-apps/manifest` → introduce `$PROD_APP_URL` → firma.
+2. Copia `header`/`payload`/`signature` y cárgalos:
+   ```bash
+   echo "<header>" | npx vercel env add FARCASTER_ACCOUNT_ASSOCIATION_HEADER production
+   echo "<payload>" | npx vercel env add FARCASTER_ACCOUNT_ASSOCIATION_PAYLOAD production
+   echo "<signature>" | npx vercel env add FARCASTER_ACCOUNT_ASSOCIATION_SIGNATURE production
+   ```
+3. Redeploy y reverifica:
+   ```bash
+   cd /home/xabier/basedev/DailyGive && npx vercel --prod --yes
+   curl -s "$PROD_APP_URL/.well-known/farcaster.json" | python3 -m json.tool
+   ```
 
 ### 7.10 — Pruebas end-to-end con fondos reales
 
-Repite la sección 5, esta vez con GIVE/GIVEN reales de por medio. Considera:
+```bash
+echo "https://warpcast.com/~/developers/mini-apps/preview?url=$PROD_APP_URL"
+```
+
+Abre esa URL y repite el checklist de la sección 5, esta vez con GIVE/GIVEN reales de por medio. Además:
 - Rollout gradual: whitelist de FIDs beta (tú y gente de confianza) antes de abrir a todos.
-- `claim()`/`tip()` los paga el gas cada usuario con su propia wallet, no `speedrun` — confirma esto probando con una wallet de prueba que no sea `speedrun`. `speedrun` solo gasta gas si vuelves a llamar una función admin (`rotateFidBinder`, etc.), así que no necesita un balance operativo grande post-deploy.
+- `claim()`/`tip()` los paga el gas cada usuario con su propia wallet, no `speedrun` — pruébalo con una wallet que no sea `speedrun`. `speedrun` solo gasta gas si vuelves a llamar una función admin (`rotateFidBinder`, etc.), así que no necesita un balance operativo grande post-deploy.
 
 ### 7.11 — Anunciar producción
 
-Igual que la sección 6, pero deja claro en el cast que es la versión de producción en Base mainnet (no testnet), si antes anunciaste la de Sepolia a la misma audiencia.
+Igual que la sección 6, pero deja claro en el cast que es la versión de producción en Base mainnet (no testnet), si antes anunciaste la de Sepolia a la misma audiencia. Cast manual, lo publicas tú.
