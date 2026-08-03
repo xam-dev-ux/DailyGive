@@ -1,0 +1,22 @@
+# Secrets — never commit, regardless of subdirectory .gitignore coverage
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/*/84532/dry-run/
+
+# Next.js / Node
+app/node_modules/
+app/.next/
+app/out/
+app/.vercel/
+*.tsbuildinfo
+
+# OS
+.DS_Store

@@ -1,0 +1,8 @@
+# Foundry
+out/
+cache/
+broadcast/*/31337/
+broadcast/*/84532/dry-run/
+
+# Env
+.env
