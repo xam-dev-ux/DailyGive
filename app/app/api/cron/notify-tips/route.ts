@@ -9,7 +9,10 @@ import { sendNotification } from "@/lib/neynar";
 export const maxDuration = 30;
 
 /// Polls for new `Tipped` events since the last processed block and notifies each recipient.
-/// Triggered by Vercel Cron every 60s (see vercel.json).
+/// Triggered by Vercel Cron once daily (see vercel.json) — Vercel's Hobby plan only allows daily
+/// cron schedules, so this batches up to 24h of tips into one notification per recipient rather
+/// than pinging in near-real-time. Fine for now; revisit (more frequent polling via an external
+/// scheduler, or Vercel Pro) if same-day notification latency becomes a real product need.
 ///
 /// Why polling, not a webhook: checked docs.neynar.com directly — Neynar webhooks only cover
 /// Farcaster-protocol events (casts, reactions, follows), not arbitrary onchain contract events,
@@ -39,20 +42,34 @@ export async function GET(req: NextRequest) {
     toBlock: latestBlock,
   });
 
+  // Batched window (daily, not per-minute — see doc comment above) can carry many tips to the
+  // same recipient; summarize into one notification per fid instead of one per tip, both for a
+  // better message and to stay well under Farcaster's 1-per-30s-per-token throttle.
+  const perRecipient = new Map<number, { total: bigint; count: number }>();
   for (const log of logs) {
-    const { toFid, fromFid, amount } = log.args;
-    if (toFid === undefined || fromFid === undefined || amount === undefined) continue;
+    const { toFid, amount } = log.args;
+    if (toFid === undefined || amount === undefined) continue;
+    const fid = Number(toFid);
+    const existing = perRecipient.get(fid) ?? { total: 0n, count: 0 };
+    perRecipient.set(fid, { total: existing.total + amount, count: existing.count + 1 });
+  }
+
+  for (const [fid, { total, count }] of perRecipient) {
     await sendNotification({
-      targetFids: [Number(toFid)],
+      targetFids: [fid],
       title: "You got GIVEN",
-      body: `fid ${fromFid} tipped you ${formatUnits(amount, GIVE_DECIMALS)} GIVE`,
+      body:
+        count === 1
+          ? `You received ${formatUnits(total, GIVE_DECIMALS)} GIVE`
+          : `You received ${formatUnits(total, GIVE_DECIMALS)} GIVE across ${count} tips`,
       targetUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://dailygive.example",
     });
   }
 
   await setLastProcessedBlock(latestBlock);
   return NextResponse.json({
-    processed: logs.length,
+    tipsProcessed: logs.length,
+    notificationsSent: perRecipient.size,
     fromBlock: fromBlock.toString(),
     toBlock: latestBlock.toString(),
   });

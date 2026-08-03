@@ -1,6 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/notify-tips", "schedule": "* * * * *" },
+    { "path": "/api/cron/notify-tips", "schedule": "0 0 * * *" },
     { "path": "/api/cron/daily-reminder", "schedule": "0 12 * * *" }
   ]
 }
