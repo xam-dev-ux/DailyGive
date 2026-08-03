@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { formatUnits } from "viem";
-import { publicClient } from "@/lib/viem";
+import { publicClient, getContractEventsChunked } from "@/lib/viem";
 import { dailyGiveAbi, b20Abi } from "@/lib/abi";
-import { DAILYGIVE_ADDRESS, GIVEN_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
+import { DAILYGIVE_ADDRESS, DEPLOY_BLOCK, GIVEN_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
 
 export default async function ReputationPage({ params }: { params: Promise<{ fid: string }> }) {
   const { fid: fidParam } = await params;
@@ -22,20 +22,20 @@ export default async function ReputationPage({ params }: { params: Promise<{ fid
       functionName: "balanceOf",
       args: [wallet],
     }),
-    publicClient.getContractEvents({
+    getContractEventsChunked({
       address: DAILYGIVE_ADDRESS,
       abi: dailyGiveAbi,
       eventName: "Tipped",
       args: { toFid: fid },
-      fromBlock: 0n,
+      fromBlock: DEPLOY_BLOCK,
       toBlock: "latest",
     }),
-    publicClient.getContractEvents({
+    getContractEventsChunked({
       address: DAILYGIVE_ADDRESS,
       abi: dailyGiveAbi,
       eventName: "Tipped",
       args: { fromFid: fid },
-      fromBlock: 0n,
+      fromBlock: DEPLOY_BLOCK,
       toBlock: "latest",
     }),
   ]);

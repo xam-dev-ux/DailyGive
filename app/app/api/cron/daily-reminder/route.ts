@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publicClient } from "@/lib/viem";
+import { publicClient, getContractEventsChunked } from "@/lib/viem";
 import { dailyGiveAbi } from "@/lib/abi";
-import { DAILYGIVE_ADDRESS } from "@/lib/contracts";
+import { DAILYGIVE_ADDRESS, DEPLOY_BLOCK } from "@/lib/contracts";
 import { sendNotification } from "@/lib/neynar";
 
 export const maxDuration = 30;
@@ -17,11 +17,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const bindLogs = await publicClient.getContractEvents({
+  const bindLogs = await getContractEventsChunked({
     address: DAILYGIVE_ADDRESS,
     abi: dailyGiveAbi,
     eventName: "FidBound",
-    fromBlock: 0n,
+    fromBlock: DEPLOY_BLOCK,
     toBlock: "latest",
   });
 

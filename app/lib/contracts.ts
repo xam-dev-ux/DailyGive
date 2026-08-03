@@ -18,3 +18,9 @@ export const GIVEN_ADDRESS = (process.env.NEXT_PUBLIC_GIVEN_ADDRESS ??
   "0x0000000000000000000000000000000000000000") as `0x${string}`;
 
 export const GIVE_DECIMALS = 6;
+
+/// Block DailyGive was deployed at, per network — event queries (Feed, leaderboard, /[fid], the
+/// daily-reminder cron) start scanning here instead of genesis. Public RPCs cap eth_getLogs to a
+/// 10,000-block range per call ("eth_getLogs is limited to a 10,000 range" — hit this live), so
+/// this alone isn't the fix, just the starting point; see lib/viem.ts's chunked fetch helper.
+export const DEPLOY_BLOCK = CHAIN_ID === base.id ? 49500681n : 45007956n;

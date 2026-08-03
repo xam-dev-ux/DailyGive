@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatUnits } from "viem";
-import { publicClient } from "@/lib/viem";
+import { publicClient, getContractEventsChunked } from "@/lib/viem";
 import { dailyGiveAbi, b20Abi } from "@/lib/abi";
-import { DAILYGIVE_ADDRESS, GIVEN_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
+import { DAILYGIVE_ADDRESS, DEPLOY_BLOCK, GIVEN_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
 
 type Row = { fid: bigint; balance: bigint };
 
@@ -18,11 +18,11 @@ export default function Leaderboard() {
 
   useEffect(() => {
     (async () => {
-      const logs = await publicClient.getContractEvents({
+      const logs = await getContractEventsChunked({
         address: DAILYGIVE_ADDRESS,
         abi: dailyGiveAbi,
         eventName: "Tipped",
-        fromBlock: 0n,
+        fromBlock: DEPLOY_BLOCK,
         toBlock: "latest",
       });
 

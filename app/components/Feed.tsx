@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
-import { publicClient } from "@/lib/viem";
+import { getContractEventsChunked } from "@/lib/viem";
 import { dailyGiveAbi } from "@/lib/abi";
-import { DAILYGIVE_ADDRESS, GIVE_DECIMALS } from "@/lib/contracts";
+import { DAILYGIVE_ADDRESS, DEPLOY_BLOCK, GIVE_DECIMALS } from "@/lib/contracts";
 
 type TipEvent = {
   fromFid: bigint;
@@ -23,12 +23,12 @@ export function Feed({ fid }: { fid: bigint | undefined }) {
     let cancelled = false;
 
     (async () => {
-      const logs = await publicClient.getContractEvents({
+      const logs = await getContractEventsChunked({
         address: DAILYGIVE_ADDRESS,
         abi: dailyGiveAbi,
         eventName: "Tipped",
         args: { fromFid: fid },
-        fromBlock: 0n,
+        fromBlock: DEPLOY_BLOCK,
         toBlock: "latest",
       });
       if (cancelled) return;
