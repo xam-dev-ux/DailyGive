@@ -46,6 +46,9 @@ export const metadata: Metadata = {
     // accountAssociation in the manifest — that one proves domain ownership to Warpcast, this
     // one proves it to Base's own app registry).
     "base:app_id": "6a71047fa8c4f2b6db3b3f5a",
+    // Talent Protocol project-website verification (dashboard-issued).
+    "talentapp:project_verification":
+      "c6224eb3d437b70946906690d54e523f45cb21eba3f463aaeeefde8f7f0dbe149b4445fdb6fb0ff254d57db29a904f9f60bacf15206b7cd3cbaf3a533d71f722",
   },
 };
 
