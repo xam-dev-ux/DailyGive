@@ -18,9 +18,13 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://dailygive.example";
 /// Embed metadata for the cast preview when this URL is shared. `fc:miniapp` is the current tag
 /// (miniapps.farcaster.xyz/docs/specification, confirmed in Phase 0 research); `fc:frame` is kept
 /// as a back-compat alias per spec. Both carry identical content.
+///
+/// `imageUrl` must be 3:2 and 600x400-3000x2000px per spec — deliberately NOT the same asset as
+/// `splashImageUrl` below, which must be ~200x200 square. Conflating the two was a bug caught by
+/// auditing against the full spec (llms-full.txt) — og-image.png (1200x800) is dedicated to this.
 const embed = JSON.stringify({
   version: "1",
-  imageUrl: `${appUrl}/splash.png`,
+  imageUrl: `${appUrl}/og-image.png`,
   button: {
     title: "Open DailyGive",
     action: {

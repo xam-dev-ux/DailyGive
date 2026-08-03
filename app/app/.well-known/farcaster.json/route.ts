@@ -32,6 +32,10 @@ export async function GET() {
       primaryCategory: "social",
       tags: ["social", "tipping", "b20", "base"],
       canonicalDomain: new URL(appUrl).hostname,
+      // eip155:84532 = Base Sepolia. Update to eip155:8453 (Base mainnet) alongside the
+      // NEXT_PUBLIC_CHAIN_ID / contract-address env vars when promoting per PUBLISH.md's
+      // mainnet section — this and those must move together, never independently.
+      requiredChains: [`eip155:${process.env.NEXT_PUBLIC_CHAIN_ID ?? "84532"}`],
     },
   };
 
