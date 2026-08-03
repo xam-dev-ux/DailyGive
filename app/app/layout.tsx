@@ -42,6 +42,10 @@ export const metadata: Metadata = {
   description: "Claim 100 GIVE daily, tip any Farcaster user. Received tips become permanent GIVEN reputation.",
   other: {
     "fc:miniapp": embed,
+    // Base app-directory domain verification (dashboard-issued, separate from the Farcaster
+    // accountAssociation in the manifest — that one proves domain ownership to Warpcast, this
+    // one proves it to Base's own app registry).
+    "base:app_id": "6a71047fa8c4f2b6db3b3f5a",
   },
 };
 
