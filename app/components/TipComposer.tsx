@@ -76,11 +76,21 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
     if (approveConfirmed) refetchAllowance();
   }, [approveConfirmed, refetchAllowance]);
 
-  const { writeContract: tip, data: tipHash, isPending: tipSubmitting, error: tipError } = useWriteContract();
+  const {
+    writeContract: tip,
+    data: tipHash,
+    isPending: tipSubmitting,
+    error: tipError,
+    reset: resetTip,
+  } = useWriteContract();
   const { isLoading: tipConfirming, isSuccess: tipConfirmed } = useWaitForTransactionReceipt({ hash: tipHash });
 
   const [sentTip, setSentTip] = useState<{ username: string; amount: number } | null>(null);
 
+  // Without resetTip(), tipHash (and therefore tipConfirmed) stays stuck true after the first
+  // successful tip. Typing a new recipient re-runs this effect on the `resolved` dependency, sees
+  // the still-true tipConfirmed from the PREVIOUS tip, and immediately wipes the form again before
+  // the user can send anything — reported live: "según pongo un nuevo nombre... lo borra".
   useEffect(() => {
     if (!tipConfirmed || !resolved) return;
     const username = resolved.username;
@@ -88,9 +98,10 @@ export function TipComposer({ castHash }: { castHash?: `0x${string}` }) {
       setSentTip({ username, amount });
       setHandle("");
       setResolved(null);
+      resetTip();
     }, 0);
     return () => clearTimeout(timeout);
-  }, [tipConfirmed, resolved, amount]);
+  }, [tipConfirmed, resolved, amount, resetTip]);
 
   async function shareTip() {
     if (!sentTip) return;
